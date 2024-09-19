@@ -48,6 +48,53 @@ def splitLine(line):
     parts = [x for x in parts if x]
     return parts
 
+def boxInstruction(instructions, prefix=''):
+    parts = splitLine(instructions)
+    print('BOX: ', parts)
+    gcode = ''
+    W = 0.0 # Width
+    H = 0.0 #Height
+    D = 0.0 # Depth
+    s = 0.1 # Step
+    d = 1   # Z step
+    o = 0.0 # Z offstet from material
+
+    #  ['W22', 'H25.5', 'D2', 's1', 'd2']
+    for part in parts:
+        match part[0]:
+            case 'W':
+                W = float(part[1:])
+            case 'H':
+                H = float(part[1:])
+            case 'D':
+                D = float(part[1:])
+            case 's':
+                s = float(part[1:])
+            case 'd':
+                d = float(part[1:])
+            case 'o':
+                o = float(part[1:])
+
+    if o > 0:
+        gcode += 'G01 Z{:.4f}'.format(o)
+    gcode += 'G01 X{:.4f} Y{:.4f}'.format(-W/2, -H/2)
+    Z = 0.0
+    sig = 1.0
+    dir = 1.0
+    while Z < D:
+        X = 0.0
+        gcode += prefix + 'G01 Z{:.4f}\n'.format(-d)
+        Z += d
+        while X < W:
+            gcode += prefix + 'G01 Y{:.4f}\n'.format(sig * H)
+            sig *= -1.0
+            X += s
+            if X < W:
+                gcode += prefix + 'G01 X{:.4f}\n'.format(dir * s)
+        dir *= -1.0
+    gcode += 'G00 X{:.4f} Y{:.4f} Z{:.4f}'.format(W/2, H/2, D)
+    return gcode
+
 def macroPath(instructions, MACROS, prefix=''):
     gcode = ''
     macro = ''
@@ -80,6 +127,8 @@ def parseInstructions(command, MACROS, prefix=''):
     gcode = ''
     for instruction in command:
         match instruction:
+            case 'box':
+                gcode += boxInstruction(command[instruction], prefix + ' ')
             case 'macroPath':
                 gcode += macroPath(command[instruction], MACROS, prefix + ' ')
             case _:
