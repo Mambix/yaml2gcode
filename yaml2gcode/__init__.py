@@ -30,7 +30,7 @@ def parseMacro(name, MACROS, prefix=''):
     macroName = name
     if 'label' in macroDef:
         macroName = macroDef['label']
-    gcode = prefix + '; Macro: ' + macroName + '\n '
+    gcode = '\n' + prefix + '; Macro: ' + macroName + '\n '
     if 'description' in macroDef:
         gcode += prefix + '; - ' + macroDef['description'] + '\n'
     for command in macroDef['commands']:
@@ -43,6 +43,56 @@ def parseMacro(name, MACROS, prefix=''):
             gcode += parseInstructions(command, MACROS, prefix)
     return gcode
 
+def polarArcVector(instructions, prefix=''):
+    parts = splitLine(instructions)
+    D = '2'
+    R = 0.0
+    S = 0.0
+    E = 0.0
+    for part in parts:
+        match part[0]:
+            case 'R':
+                R = float(part[1:])
+                if R < 0.0:
+                    D = '3'
+                    R = abs(R)
+            case 'S':
+                S = float(part[1:]) * math.pi / 180.0
+            case 'E':
+                E = float(part[1:]) * math.pi / 180.0
+    if E < S:
+        D = '3'
+        R = abs(R)
+    X1 = R * math.sin(S)
+    Y1 = R * math.cos(S)
+    X2 = R * math.sin(E)
+    Y2 = R * math.cos(E)
+    return prefix + 'G0{} X{:.4f} Y{:.4f} R{:.4f} ; polarArcVector\n'.format(D, X2-X1, Y2-Y1, R)
+
+def polarVector(instructions, prefix=''):
+    parts = splitLine(instructions)
+    D = 1.0
+    R = 0.0
+    A = 0.0
+    S = None
+    for part in parts:
+        match part[0]:
+            case 'R':
+                R = float(part[1:])
+                if R < 0.0:
+                    D = -1.0
+                    R = -R
+            case 'A':
+                A = float(part[1:]) * math.pi / 180.0
+            case 'S':
+                S = float(part[1:]) * math.pi / 180.0
+    X = R * math.sin(A)
+    Y = R * math.cos(A)
+    if S is not None:
+        X -= R * math.sin(S)
+        Y -= R * math.cos(S)
+    return prefix + 'G00 X{:.4f} Y{:.4f} ; polarVector\n'.format(D * X, D * Y)
+
 def splitLine(line):
     parts = line.split(' ')
     parts = [x for x in parts if x]
@@ -53,13 +103,12 @@ def boxInstruction(instructions, prefix=''):
     print('BOX: ', parts)
     gcode = ''
     W = 0.0 # Width
-    H = 0.0 #Height
+    H = 0.0 # Height
     D = 0.0 # Depth
     s = 0.1 # Step
     d = 1   # Z step
     o = 0.0 # Z offstet from material
 
-    #  ['W22', 'H25.5', 'D2', 's1', 'd2']
     for part in parts:
         match part[0]:
             case 'W':
@@ -123,14 +172,38 @@ def macroPath(instructions, MACROS, prefix=''):
     gcode += G00(-oldX, -oldY, None, True, '', '')
     return gcode
 
+def repeatMacro(instructions, MACROS, prefix=''):
+    gcode = ''
+    # oldX = 0.0
+    # oldY = 0.0
+    # prefixOut = prefix
+    parts = splitLine(instructions)
+    macro = parts[0]
+    count = int(parts[1])
+    instruction = ' '.join(parts[2:])
+    while count > 0:
+        gcode += instruction + '\n'
+        gcode += parseMacro(macro, MACROS, prefix)
+        count = count - 1
+    # gcode += G00(-oldX, -oldY, None, True, '', '')
+    return gcode
+
 def parseInstructions(command, MACROS, prefix=''):
     gcode = ''
     for instruction in command:
         match instruction:
             case 'box':
                 gcode += boxInstruction(command[instruction], prefix + ' ')
+            case 'macro':
+                gcode += parseMacro(command[instruction], MACROS, prefix + ' ')
             case 'macroPath':
                 gcode += macroPath(command[instruction], MACROS, prefix + ' ')
+            case 'polarArcVector':
+                gcode += polarArcVector(command[instruction], prefix + ' ')
+            case 'polarVector':
+                gcode += polarVector(command[instruction], prefix + ' ')
+            case 'repeatMacro':
+                gcode += repeatMacro(command[instruction], MACROS, prefix + ' ')
             case _:
                 gcode += prefix + '; ToDO instruction: ' + instruction + '\n'
     return gcode
